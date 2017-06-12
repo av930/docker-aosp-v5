@@ -1,44 +1,74 @@
-#
-# We can use either base12 or base14
-#
-FROM tedwang/aosp-base14:latest
+###
+### Environments to build AOSP
+### 
 
-MAINTAINER tedwang.tw@gmail.com
 
-#
-# AOSP requirement depends on android versions
-#
-# Java 7
-RUN apt-get install -y openjdk-7-jdk && apt-get clean
+### basic information
+FROM ubuntu:16.04
+MAINTAINER joongkeun.kim <av9300@gmail.com>
 
-#
-# user account
-#
-ENV MYNAME android
-ENV MYPASS android
-ENV HOME /home/$MYNAME
-#RUN mkdir -p $HOME
 
-RUN echo "User: android Pass: $MYPASS"
-RUN useradd --create-home -d $HOME --shell /bin/bash --user-group --groups adm,sudo $MYNAME
-RUN echo "$MYNAME:$MYPASS" | chpasswd
+### change from Dash to Bash shell which is a bit slow and a bit more functionalities 
+RUN echo "changing shell to Bash" | debconf-set-selections && \ dpkg-reconfigure -p critical dash
 
-USER $MYNAME
-WORKDIR $HOME
 
-#VOLUME ["$HOME/aosp"]
+### install dependent packages to build AOSP
+RUN apt-get update ## update list of packages \
+	&& apt-get install -y ## install packages answering yes to all prompts \
+		openjdk-8-jdk ## build java with open JDK version 8\
+		bison ## parser generator upward compatible to yacc\
+		build-essential ## all the packages needed to compile a debian packages and generally include c/c++ compilers and libraries\
+		curl \
+		flex \
+		g++-multilib \
+		git \
+		gnupg \
+		gperf \
+		ia32-libs \
+		lib32ncurses5-dev \
+		lib32readline5-dev \
+		lib32z-dev \
+		libc6-dev \
+		libgl1-mesa-dev \
+		libx11-dev \
+		libxml2-utils \
+		mingw32 \
+		python-markdown \
+		tofrodos \
+		x11proto-core-dev \
+		xsltproc \
+		zip \
+		zlib1g-dev\
+	&& apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp ## clear local cache to save space
 
-# shell prompt
-ENV PS1 "\$(if [[ \$? == 0 ]]; then echo '\[\033[0;32m\]'; else echo '\[\033[0;31m\]'; fi)\$? \$(if [[ ${EUID} == 0 ]]; then echo '\[\033[0;31m\]\u'; else echo '\[\033[0;34m\]\u@'; fi)\[\033[0;33m\] \w \[\033[0;32m\]\$\[\033[00m\] "
-RUN echo export PS1="$PS1" >> ~/.bashrc
 
-#
-# AOSP Repo tool
-#
-RUN mkdir ~/bin
-RUN echo "export PATH=~/bin:\$PATH" >> ~/.bashrc
-#ENV PATH ~/bin:$PATH
+### Download the Repo tool and ensure that it is executable
+RUN mkdir ~/bin \
+	&& curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+&& chmod a+x ~/bin/repo
+	&& PATH=~/bin:$PATH
 
-RUN curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-RUN chmod a+x ~/bin/repo
+
+# Install latest version of JDK # See http://source.android.com/source/initializing.html#setting-up-a-linux-build-environment WORKDIR /tmp 
+
+# All builds will be done by user aosp 
+COPY gitconfig /root/.gitconfig 
+COPY ssh_config /root/.ssh/config 
+
+# The persistent data will be in these two directories, everything else is considered to be ephemeral
+ VOLUME ["/tmp/ccache", "/aosp"] 
+
+# Improve rebuild performance by enabling compiler cache 
+ENV USE_CCACHE 1 
+ENV CCACHE_DIR /tmp/ccache 
+
+# Work in the build directory, repo is expected to be init'd here 
+WORKDIR /aosp 
+
+
+
+# Prepare the directory needed for running ssh server 
+RUN mkdir /var/run/sshd
+EXPOSE 22 
+CMD ["/usr/sbin/sshd", "-D"]
 
